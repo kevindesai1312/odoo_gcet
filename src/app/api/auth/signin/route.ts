@@ -26,9 +26,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    const token = jwt.sign({ userId: String(user._id || user.id), email: user.email, role: user.role || 'EMPLOYEE' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: String(user._id || user.id), email: user.email, role: user.role || 'employee' }, JWT_SECRET, { expiresIn: '7d' });
 
-    return NextResponse.json({ token, user: { id: String(user._id || user.id), email: user.email, role: user.role } }, { status: 200 });
+    const response = NextResponse.json({ token, user: { id: String(user._id || user.id), email: user.email, role: user.role } }, { status: 200 });
+
+    // Set secure HttpOnly cookie for auth-token
+    response.cookies.set('auth-token', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+
+    return response;
   } catch (err: any) {
     console.error('Signin error', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

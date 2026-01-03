@@ -1,11 +1,22 @@
+import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { EmployeesContent } from "./employees-content"
-import { verifyAndGetEmployee } from '@/lib/auth-helper'
-import { getDb } from '@/lib/mongodb'
 
 export default async function EmployeesPage() {
-  const employee = await verifyAndGetEmployee()
+  const supabase = await createClient()
   
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    redirect("/auth/signin")
+  }
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("*")
+    .eq("user_id", user.id)
+    .single()
+
   if (!employee) {
     redirect("/auth/signin")
   }
@@ -16,23 +27,10 @@ export default async function EmployeesPage() {
     redirect("/dashboard")
   }
 
-  let employees: unknown[] = []
-
-  try {
-    const db = await getDb()
-    const emps = await db.collection('employees')
-      .find({ is_active: true })
-      .sort({ created_at: -1 })
-      .toArray()
-    
-    employees = emps.map(emp => ({
-      ...emp,
-      _id: emp._id?.toString() || '',
-      user_id: emp.user_id?.toString() || ''
-    }))
-  } catch (error) {
-    console.error('Error fetching employees:', error)
-  }
+  const { data: employees } = await supabase
+    .from("employees")
+    .select("*")
+    .order("created_at", { ascending: false })
 
   return <EmployeesContent employees={employees || []} />
 }

@@ -1,21 +1,25 @@
+import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { ProfileContent } from "./profile-content"
-import { verifyAndGetEmployee } from '@/lib/auth-helper'
 
 export default async function ProfilePage() {
-  const currentEmployee = await verifyAndGetEmployee()
-
-  if (!currentEmployee) {
-    redirect('/auth/signin')
+  const supabase = await createClient()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    redirect("/auth/signin")
   }
 
-  const isAdmin = currentEmployee.role === 'ADMIN'
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("*")
+    .eq("user_id", user.id)
+    .single()
 
-  const serializedEmployee = {
-    ...currentEmployee,
-    _id: currentEmployee._id?.toString() || '',
-    user_id: currentEmployee.user_id?.toString() || ''
+  if (!employee) {
+    redirect("/auth/signin")
   }
 
-  return <ProfileContent employee={serializedEmployee} isAdmin={isAdmin} />
+  return <ProfileContent employee={employee} />
 }

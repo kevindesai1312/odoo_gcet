@@ -7,21 +7,10 @@ export type Employee = {
   last_name: string
   phone: string | null
   address: string | null
-  city: string | null
-  state: string | null
-  zip_code: string | null
   profile_picture: string | null
   department: string | null
   position: string | null
   hire_date: string | null
-  employment_type: string | null
-  manager_name: string | null
-  salary: number | null
-  salary_currency: string | null
-  pay_frequency: string | null
-  benefits: string | null
-  documents: any[] | null
-  is_active: boolean
   role: 'employee' | 'admin' | 'hr'
   status: 'active' | 'inactive' | 'terminated'
   created_at: string

@@ -1,8 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +12,6 @@ import {
   DollarSign, 
   ArrowRight, 
   User,
-  LogOut,
   TrendingUp,
   CheckCircle2,
   XCircle,
@@ -22,7 +19,6 @@ import {
 } from "lucide-react"
 import type { Employee, LeaveRequest } from "@/lib/types"
 import { motion } from "framer-motion"
-import { toast } from "sonner"
 
 type DashboardData = {
   totalEmployees: number
@@ -41,22 +37,6 @@ export function DashboardContent({
   isAdmin: boolean
   dashboardData: DashboardData
 }) {
-  const router = useRouter()
-  const [loggingOut, setLoggingOut] = useState(false)
-
-  const handleLogout = async () => {
-    setLoggingOut(true)
-    try {
-      // Clear auth token cookie
-      document.cookie = 'auth-token=; Path=/; Max-Age=0; SameSite=Lax'
-      toast.success('Logged out successfully')
-      router.push('/auth/signin')
-      router.refresh()
-    } catch (err: any) {
-      toast.error('Logout failed')
-      setLoggingOut(false)
-    }
-  }
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
@@ -107,23 +87,6 @@ export function DashboardContent({
 
         {isAdmin ? (
           <>
-            <motion.div variants={itemVariants} className="mb-4 flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold">Admin Dashboard</h2>
-                <p className="text-sm text-muted-foreground">Organization overview and management</p>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={handleLogout}
-                disabled={loggingOut}
-                className="gap-2"
-              >
-                <LogOut className="w-4 h-4" />
-                {loggingOut ? 'Signing out...' : 'Logout'}
-              </Button>
-            </motion.div>
-
             <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <Card className="border-0 shadow-md bg-gradient-to-br from-primary/10 to-primary/5">
                 <CardContent className="p-6">
@@ -312,17 +275,17 @@ export function DashboardContent({
                 </Card>
               </Link>
 
-              <button onClick={handleLogout} disabled={loggingOut} className="text-left w-full">
-                <Card className="border-0 shadow-md hover:shadow-lg transition-shadow cursor-pointer bg-gradient-to-br from-gray-200/10 to-gray-200/5">
+              <Link href="/dashboard/payroll">
+                <Card className="border-0 shadow-md hover:shadow-lg transition-shadow cursor-pointer bg-gradient-to-br from-purple-500/10 to-purple-500/5">
                   <CardContent className="p-6">
-                    <div className="w-12 h-12 rounded-xl bg-destructive/10 flex items-center justify-center mb-4">
-                      <LogOut className="w-6 h-6 text-destructive" />
+                    <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mb-4">
+                      <DollarSign className="w-6 h-6 text-purple-600" />
                     </div>
-                    <h3 className="font-semibold text-lg">Logout</h3>
-                    <p className="text-sm text-muted-foreground mt-1">{loggingOut ? 'Signing out...' : 'Sign out of your account'}</p>
+                    <h3 className="font-semibold text-lg">Payroll</h3>
+                    <p className="text-sm text-muted-foreground mt-1">View salary details</p>
                   </CardContent>
                 </Card>
-              </button>
+              </Link>
             </motion.div>
 
             <motion.div variants={itemVariants}>
@@ -349,50 +312,6 @@ export function DashboardContent({
                   ) : (
                     <p className="text-muted-foreground text-center py-8">No leave requests yet</p>
                   )}
-                </CardContent>
-              </Card>
-            </motion.div>
-            
-            <motion.div variants={itemVariants} className="mt-6">
-              <Card className="shadow-md">
-                <CardHeader>
-                  <CardTitle>Recent Activity & Alerts</CardTitle>
-                  <CardDescription>Quick updates about your account</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {dashboardData.todayAttendance ? (
-                      <div className="flex items-start gap-3">
-                        <CheckCircle2 className="w-5 h-5 text-green-600 mt-1" />
-                        <div>
-                          <p className="font-medium">You checked in today</p>
-                          <p className="text-sm text-muted-foreground">Good job — keep your schedule consistent.</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-3">
-                        <AlertCircle className="w-5 h-5 text-yellow-600 mt-1" />
-                        <div>
-                          <p className="font-medium">No check-in detected</p>
-                          <p className="text-sm text-muted-foreground">Remember to check in for today's work.</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {dashboardData.recentLeaves && dashboardData.recentLeaves.length > 0 ? (
-                      dashboardData.recentLeaves.slice(0,3).map((l) => (
-                        <div key={l.id} className="flex items-start gap-3">
-                          {l.status === 'approved' ? <CheckCircle2 className="w-5 h-5 text-green-600 mt-1" /> : <AlertCircle className="w-5 h-5 text-yellow-600 mt-1" />}
-                          <div>
-                            <p className="font-medium">{l.leave_type} leave — <span className="capitalize">{l.status}</span></p>
-                            <p className="text-sm text-muted-foreground">{new Date(l.start_date).toLocaleDateString()} — {new Date(l.end_date).toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No recent alerts</p>
-                    )}
-                  </div>
                 </CardContent>
               </Card>
             </motion.div>

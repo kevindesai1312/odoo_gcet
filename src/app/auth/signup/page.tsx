@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,6 +24,7 @@ export default function SignUpPage() {
   })
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const supabase = createClient()
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,9 +36,9 @@ export default function SignUpPage() {
       return
     }
 
-    const response = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const response = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email: formData.email,
         password: formData.password,
@@ -44,52 +46,35 @@ export default function SignUpPage() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         role: formData.role,
-        phone: formData.phone,
-        hireDate: new Date().toISOString().split('T')[0],
       }),
     })
 
     const result = await response.json()
 
     if (!response.ok) {
-      toast.error(result.error || 'Failed to create account')
+      toast.error(result.error || "Failed to create account")
       setLoading(false)
       return
     }
 
-    // Auto-login after signup
-    try {
-      const res = await fetch('/api/auth/signin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, password: formData.password }),
-      })
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
+    })
 
-      const data = await res.json()
-      if (!res.ok) {
-        toast.success('Account created. Please sign in.')
-        router.push('/auth/signin')
-        setLoading(false)
-        return
-      }
-
-      const token = data.data?.token
-      if (token) {
-        document.cookie = `token=${token}; Path=/; Max-Age=${60 * 60 * 24 * 7}; SameSite=Lax`
-      }
-
-      toast.success('Account created successfully!')
-      router.push('/dashboard')
-      router.refresh()
-    } catch (err: any) {
-      toast.success('Account created. Please sign in.')
-      router.push('/auth/signin')
+    if (signInError) {
+      toast.error(signInError.message)
       setLoading(false)
+      return
     }
+
+    toast.success("Account created successfully!")
+    router.push("/dashboard")
+    router.refresh()
   }
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
+    <div className="min-h-screen flex">
       <div className="hidden lg:flex lg:w-1/2 gradient-bg relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,oklch(0.7_0.15_280/0.3),transparent_50%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,oklch(0.6_0.2_240/0.2),transparent_50%)]" />
@@ -141,7 +126,7 @@ export default function SignUpPage() {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-md md:max-w-lg lg:max-w-md"
+          className="w-full max-w-md"
         >
           <Link 
             href="/" 
@@ -160,7 +145,7 @@ export default function SignUpPage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
                     <div className="relative">

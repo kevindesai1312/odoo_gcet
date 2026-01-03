@@ -20,23 +20,6 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## MongoDB-backed Auth (local)
-
-1. Ensure `MONGODB_URI` and `MONGODB_DB` are set in `.env`.
-2. Start dev server:
-
-```bash
-npm run dev
-```
-
-3. Run the auth integration test (requires dev server running):
-
-```bash
-node scripts/auth-test.js
-```
-
-The test will call `/api/auth/signup` and `/api/auth/signin` and print results.
-
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
