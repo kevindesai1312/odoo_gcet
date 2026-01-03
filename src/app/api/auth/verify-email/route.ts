@@ -5,7 +5,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/database';
+import { getDb } from '@/lib/mongodb';
+import { ObjectId } from 'mongodb';
 import type { ApiResponse } from '@/lib/types-new';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -24,14 +25,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Find verification token
-    const { data: verificationRecord, error: tokenError } = await supabase
-      .from('email_verification_tokens')
-      .select('*')
-      .eq('token', token)
-      .single();
+    const db = await getDb();
 
-    if (tokenError || !verificationRecord) {
+    // Find verification token
+    const verificationRecord = await db
+      .collection('email_verification_tokens')
+      .findOne({ token });
+
+    if (!verificationRecord) {
       return NextResponse.json(
         {
           success: false,
@@ -46,10 +47,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const expiresAt = new Date(verificationRecord.expires_at);
     if (expiresAt < new Date()) {
       // Delete expired token
-      await supabase
-        .from('email_verification_tokens')
-        .delete()
-        .eq('id', verificationRecord.id);
+      await db
+        .collection('email_verification_tokens')
+        .deleteOne({ _id: verificationRecord._id });
 
       return NextResponse.json(
         {
@@ -62,27 +62,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Mark user as verified
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ is_verified: true })
-      .eq('id', verificationRecord.user_id);
+    const updateResult = await db
+      .collection('users')
+      .updateOne(
+        { _id: verificationRecord.user_id },
+        { $set: { is_verified: true } }
+      );
 
-    if (updateError) {
+    if (!updateResult.modifiedCount) {
       return NextResponse.json(
         {
           success: false,
           message: 'Failed to verify email',
-          error: updateError.message,
+          error: 'Could not update user',
         } as ApiResponse,
         { status: 500 }
       );
     }
 
     // Delete verification token
-    await supabase
-      .from('email_verification_tokens')
-      .delete()
-      .eq('id', verificationRecord.id);
+    await db
+      .collection('email_verification_tokens')
+      .deleteOne({ _id: verificationRecord._id });
 
     return NextResponse.json(
       {

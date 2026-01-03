@@ -6,8 +6,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/database';
+import { getDb } from '@/lib/mongodb';
 import { verifyToken } from '@/lib/auth';
+import { ObjectId } from 'mongodb';
 import type { ApiResponse, Attendance } from '@/lib/types-new';
 
 /**
@@ -49,52 +50,53 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const fromDate = url.searchParams.get('fromDate');
     const toDate = url.searchParams.get('toDate');
 
-    // Build query
-    let query = supabase.from('attendance').select('*');
+    const db = await getDb();
+    
+    // Build query filter
+    let filter: any = {};
 
     // If not admin, only return own attendance
     if (!employeeId && decoded.userId) {
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('id')
-        .eq('user_id', decoded.userId)
-        .single();
+      const employee = await db.collection('employees').findOne({
+        user_id: new ObjectId(decoded.userId)
+      });
 
       if (employee) {
-        query = query.eq('employee_id', employee.id);
+        filter.employee_id = employee._id;
       }
     } else if (employeeId) {
-      query = query.eq('employee_id', employeeId);
+      filter.employee_id = new ObjectId(employeeId);
     }
 
     if (fromDate) {
-      query = query.gte('attendance_date', fromDate);
+      filter.attendance_date = { $gte: new Date(fromDate) };
     }
 
     if (toDate) {
-      query = query.lte('attendance_date', toDate);
+      if (filter.attendance_date) {
+        filter.attendance_date.$lte = new Date(toDate);
+      } else {
+        filter.attendance_date = { $lte: new Date(toDate) };
+      }
     }
 
-    const { data: attendance, error } = await query.order('attendance_date', {
-      ascending: false,
-    });
+    const attendance = await db.collection('attendance')
+      .find(filter)
+      .sort({ attendance_date: -1 })
+      .toArray();
 
-    if (error) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Failed to fetch attendance records',
-          error: error.message,
-        } as ApiResponse,
-        { status: 500 }
-      );
-    }
+    // Serialize ObjectIds
+    const serialized = attendance.map(record => ({
+      ...record,
+      _id: record._id?.toString(),
+      employee_id: record.employee_id?.toString()
+    }));
 
     return NextResponse.json(
       {
         success: true,
         message: 'Attendance records retrieved successfully',
-        data: attendance || [],
+        data: serialized || [],
       } as ApiResponse,
       { status: 200 }
     );

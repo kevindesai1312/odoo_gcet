@@ -1,36 +1,21 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { ProfileContent } from "./profile-content"
-import { cookies } from "next/headers"
-import { verifyToken } from "@/lib/auth"
+import { verifyAndGetEmployee } from '@/lib/auth-helper'
 
 export default async function ProfilePage() {
-  const cookieStore = await cookies()
-  const tokenCookie = cookieStore.get('token')
-  const token = tokenCookie?.value
-
-  if (!token) {
-    redirect('/auth/signin')
-  }
-
-  const decoded = verifyToken(token || '')
-  if (!decoded) {
-    redirect('/auth/signin')
-  }
-
-  const supabase = await createClient()
-
-  const { data: currentEmployee } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("user_id", decoded.userId)
-    .single()
+  const currentEmployee = await verifyAndGetEmployee()
 
   if (!currentEmployee) {
-    redirect("/auth/signin")
+    redirect('/auth/signin')
   }
 
-  const isAdmin = decoded.role === 'ADMIN'
+  const isAdmin = currentEmployee.role === 'ADMIN'
 
-  return <ProfileContent employee={currentEmployee} isAdmin={isAdmin} />
+  const serializedEmployee = {
+    ...currentEmployee,
+    _id: currentEmployee._id?.toString() || '',
+    user_id: currentEmployee.user_id?.toString() || ''
+  }
+
+  return <ProfileContent employee={serializedEmployee} isAdmin={isAdmin} />
 }

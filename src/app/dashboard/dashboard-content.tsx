@@ -2,9 +2,7 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -44,15 +42,16 @@ export function DashboardContent({
   dashboardData: DashboardData
 }) {
   const router = useRouter()
-  const supabase = createClient()
   const [loggingOut, setLoggingOut] = useState(false)
 
   const handleLogout = async () => {
     setLoggingOut(true)
     try {
-      await supabase.auth.signOut()
-      document.cookie = 'token=; Path=/; Max-Age=0;'
+      // Clear auth token cookie
+      document.cookie = 'auth-token=; Path=/; Max-Age=0; SameSite=Lax'
+      toast.success('Logged out successfully')
       router.push('/auth/signin')
+      router.refresh()
     } catch (err: any) {
       toast.error('Logout failed')
       setLoggingOut(false)
@@ -108,6 +107,23 @@ export function DashboardContent({
 
         {isAdmin ? (
           <>
+            <motion.div variants={itemVariants} className="mb-4 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Admin Dashboard</h2>
+                <p className="text-sm text-muted-foreground">Organization overview and management</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                {loggingOut ? 'Signing out...' : 'Logout'}
+              </Button>
+            </motion.div>
+
             <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <Card className="border-0 shadow-md bg-gradient-to-br from-primary/10 to-primary/5">
                 <CardContent className="p-6">

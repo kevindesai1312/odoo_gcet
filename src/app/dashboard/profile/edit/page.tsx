@@ -1,36 +1,32 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { EditProfileContent } from "./edit-profile-content"
-import { cookies } from "next/headers"
-import { verifyToken } from "@/lib/auth"
+import { verifyAndGetUserWithRole } from '@/lib/auth-helper'
+import { getDb } from '@/lib/mongodb'
+import { ObjectId } from 'mongodb'
 
 export default async function EditProfilePage() {
-  const cookieStore = await cookies()
-  const tokenCookie = cookieStore.get('token')
-  const token = tokenCookie?.value
+  const user = await verifyAndGetUserWithRole()
 
-  if (!token) {
+  if (!user) {
     redirect('/auth/signin')
   }
 
-  const decoded = verifyToken(token || '')
-  if (!decoded) {
-    redirect('/auth/signin')
-  }
-
-  const supabase = await createClient()
-
-  const { data: currentEmployee } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("user_id", decoded.userId)
-    .single()
+  const db = await getDb()
+  const currentEmployee = await db.collection('employees').findOne({
+    user_id: new ObjectId(user.userId)
+  })
 
   if (!currentEmployee) {
     redirect("/auth/signin")
   }
 
-  const isAdmin = decoded.role === 'ADMIN'
+  const isAdmin = user.role === 'ADMIN'
 
-  return <EditProfileContent employee={currentEmployee} isAdmin={isAdmin} />
+  const serializedEmployee = {
+    ...currentEmployee,
+    _id: currentEmployee._id?.toString() || '',
+    user_id: currentEmployee.user_id?.toString() || ''
+  }
+
+  return <EditProfileContent employee={serializedEmployee} isAdmin={isAdmin} />
 }

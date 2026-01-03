@@ -5,17 +5,20 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/database';
-import { verifyToken } from '@/lib/auth';
+import { getDb } from '@/lib/mongodb';
+import { ObjectId } from 'mongodb';
+import jwt from 'jsonwebtoken';
 import type { ApiResponse, PaginatedResponse, Employee } from '@/lib/types-new';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-prod';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
-    // Verify authentication
-    const authHeader = request.headers.get('authorization');
-    const token = authHeader?.split(' ')[1];
+    // Verify authentication from cookie
+    const cookieHeader = request.headers.get('cookie');
+    const authToken = cookieHeader?.split('auth-token=')[1]?.split(';')[0];
 
-    if (!token) {
+    if (!authToken) {
       return NextResponse.json(
         {
           success: false,
@@ -26,8 +29,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const decoded = verifyToken(token);
-    if (!decoded) {
+    let decoded: any;
+    try {
+      decoded = jwt.verify(authToken, JWT_SECRET);
+    } catch (e) {
       return NextResponse.json(
         {
           success: false,
@@ -39,20 +44,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     // Check if user is admin
-    const { data: user } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', decoded.userId)
-      .single();
+    const db = await getDb();
+    const user = await db.collection('users').findOne({
+      _id: new ObjectId(decoded.userId)
+    });
 
-    if (user?.role !== 'ADMIN') {
+    if (user?.role !== 'admin' && user?.role !== 'ADMIN') {
       return NextResponse.json(
         {
           success: false,
           message: 'Forbidden',
-          error: 'Only admins can view all employees',
-        } as ApiResponse,
-        { status: 403 }
       );
     }
 
@@ -62,57 +63,31 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const pageSize = parseInt(url.searchParams.get('pageSize') || '10');
     const offset = (page - 1) * pageSize;
 
-    // Get total count
-    const { count } = await supabase
-      .from('employees')
-      .select('*', { count: 'exact', head: true });
+    // Get total count and employees
+    const [employees, totalCount] = await Promise.all([
+      db.collection('employees')
+        .find({ is_active: true })
+        .sort({ created_at: -1 })
+        .skip(offset)
+        .limit(pageSize)
+        .toArray(),
+      db.collection('employees').countDocuments({ is_active: true })
+    ]);
 
-    // Get employees
-    const { data: employees, error } = await supabase
-      .from('employees')
-      .select(
-        `
-        id,
-        user_id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        department_id,
-        position,
-        hire_date,
-        salary,
-        is_active,
-        created_at,
-        updated_at,
-        departments(id, name)
-      `
-      )
-      .order('created_at', { ascending: false })
-      .range(offset, offset + pageSize - 1);
+    // Serialize ObjectIds to strings
+    const employeesList = employees.map(emp => ({
+      ...emp,
+      _id: emp._id?.toString() || '',
+      user_id: emp.user_id?.toString() || ''
+    }));
 
-    if (error) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Failed to fetch employees',
-          error: error.message,
-        } as ApiResponse,
-        { status: 500 }
-      );
-    }
-
-    const employeesList: Employee[] = Array.isArray(employees)
-      ? (employees as unknown as Employee[])
-      : [];
-
-    const responsePayload: PaginatedResponse<Employee> = {
+    const responsePayload = {
       success: true,
       data: employeesList,
-      total: count || 0,
+      total: totalCount || 0,
       page,
       pageSize,
-      totalPages: Math.ceil((count || 0) / pageSize),
+      totalPages: Math.ceil((totalCount || 0) / pageSize),
     };
 
     return NextResponse.json(responsePayload, { status: 200 });

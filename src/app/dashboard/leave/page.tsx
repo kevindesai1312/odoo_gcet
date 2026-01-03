@@ -1,22 +1,12 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { LeaveContent } from "./leave-content"
+import { verifyAndGetEmployee } from '@/lib/auth-helper'
+import { getDb } from '@/lib/mongodb'
+import { ObjectId } from 'mongodb'
 
 export default async function LeavePage() {
-  const supabase = await createClient()
+  const employee = await verifyAndGetEmployee()
   
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    redirect("/auth/signin")
-  }
-
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("user_id", user.id)
-    .single()
-
   if (!employee) {
     redirect("/auth/signin")
   }
@@ -26,24 +16,46 @@ export default async function LeavePage() {
   let leaveRequests: unknown[] = []
   let allLeaveRequests: unknown[] = []
 
-  if (isAdmin) {
-    const { data } = await supabase
-      .from("leave_requests")
-      .select("*, employees(first_name, last_name)")
-      .order("created_at", { ascending: false })
-    allLeaveRequests = data || []
-  } else {
-    const { data } = await supabase
-      .from("leave_requests")
-      .select("*")
-      .eq("employee_id", employee.id)
-      .order("created_at", { ascending: false })
-    leaveRequests = data || []
+  try {
+    const db = await getDb()
+    const employeeObjectId = new ObjectId(employee._id)
+
+    if (isAdmin) {
+      const leaves = await db.collection('leave_applications')
+        .find({})
+        .sort({ created_at: -1 })
+        .toArray()
+      
+      allLeaveRequests = leaves.map(leave => ({
+        ...leave,
+        _id: leave._id?.toString() || '',
+        employee_id: leave.employee_id?.toString() || ''
+      }))
+    } else {
+      const leaves = await db.collection('leave_applications')
+        .find({ employee_id: employeeObjectId })
+        .sort({ created_at: -1 })
+        .toArray()
+      
+      leaveRequests = leaves.map(leave => ({
+        ...leave,
+        _id: leave._id?.toString() || '',
+        employee_id: leave.employee_id?.toString() || ''
+      }))
+    }
+  } catch (error) {
+    console.error('Error fetching leave data:', error)
+  }
+
+  const serializedEmployee = {
+    ...employee,
+    _id: employee._id?.toString() || '',
+    user_id: employee.user_id?.toString() || ''
   }
 
   return (
     <LeaveContent 
-      employee={employee} 
+      employee={serializedEmployee} 
       isAdmin={isAdmin}
       leaveRequests={leaveRequests as []}
       allLeaveRequests={allLeaveRequests as []}

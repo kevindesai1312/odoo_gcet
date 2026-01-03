@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/database';
+import { getDb } from '@/lib/mongodb';
 import { verifyToken } from '@/lib/auth';
 import type { ApiResponse, LeaveApplication } from '@/lib/types-new';
 

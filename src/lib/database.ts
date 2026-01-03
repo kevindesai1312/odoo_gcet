@@ -1,177 +1,262 @@
 /**
  * Database Connection & Configuration
- * Handles all database operations for Dayflow HRMS
+ * Handles all database operations for Dayflow HRMS using MongoDB
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { MongoClient, Db } from 'mongodb';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+declare global {
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
+}
 
-// Create Supabase client
-export const supabase = createClient(supabaseUrl, supabaseKey);
+const uri = process.env.MONGODB_URI || '';
+const dbName = process.env.MONGODB_DB || 'dayflow';
+
+if (!uri) {
+  throw new Error('Please define the MONGODB_URI environment variable in your .env.local file');
+}
+
+let client: MongoClient | null = null;
+let clientPromise: Promise<MongoClient> | null = null;
+
+if (process.env.NODE_ENV === 'development') {
+  if (!global._mongoClientPromise) {
+    client = new MongoClient(uri);
+    global._mongoClientPromise = client.connect();
+  }
+  clientPromise = global._mongoClientPromise;
+} else {
+  if (!clientPromise) {
+    client = new MongoClient(uri);
+    clientPromise = client.connect();
+  }
+}
+
+export async function getMongoClient(): Promise<MongoClient> {
+  return clientPromise!;
+}
+
+export async function getDb(): Promise<Db> {
+  const mongoClient = await getMongoClient();
+  return mongoClient.db(dbName);
+}
 
 /**
- * SQL Scripts for Database Setup
- * Run these in Supabase SQL Editor to create tables
+ * Create indexes for MongoDB collections
+ * Call this function during app initialization
+ */
+export async function initializeDatabase() {
+  const db = await getDb();
+
+  // Users collection indexes
+  await db.collection('users').createIndex({ email: 1 }, { unique: true });
+  await db.collection('users').createIndex({ created_at: 1 });
+
+  // Email verification tokens indexes
+  await db.collection('email_verification_tokens').createIndex({ user_id: 1 });
+  await db.collection('email_verification_tokens').createIndex({ token: 1 }, { unique: true });
+  await db.collection('email_verification_tokens').createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
+
+  // Departments collection indexes
+  await db.collection('departments').createIndex({ manager_id: 1 });
+  await db.collection('departments').createIndex({ created_at: 1 });
+
+  // Employees collection indexes
+  await db.collection('employees').createIndex({ user_id: 1 }, { unique: true });
+  await db.collection('employees').createIndex({ email: 1 });
+  await db.collection('employees').createIndex({ department_id: 1 });
+  await db.collection('employees').createIndex({ is_active: 1 });
+
+  // Leave types indexes
+  await db.collection('leave_types').createIndex({ name: 1 }, { unique: true });
+
+  // Leave balance indexes
+  await db.collection('leave_balance').createIndex({ employee_id: 1 });
+  await db.collection('leave_balance').createIndex({ leave_type_id: 1 });
+  await db.collection('leave_balance').createIndex({ employee_id: 1, leave_type_id: 1, year: 1 }, { unique: true });
+
+  // Leave applications indexes
+  await db.collection('leave_applications').createIndex({ employee_id: 1 });
+  await db.collection('leave_applications').createIndex({ status: 1 });
+  await db.collection('leave_applications').createIndex({ leave_type_id: 1 });
+
+  // Attendance indexes
+  await db.collection('attendance').createIndex({ employee_id: 1 });
+  await db.collection('attendance').createIndex({ attendance_date: 1 });
+  await db.collection('attendance').createIndex({ employee_id: 1, attendance_date: 1 }, { unique: true });
+
+  // Payroll indexes
+  await db.collection('payroll').createIndex({ employee_id: 1 });
+  await db.collection('payroll').createIndex({ month: 1, year: 1 });
+  await db.collection('payroll').createIndex({ employee_id: 1, month: 1, year: 1 }, { unique: true });
+
+  // Salary components indexes
+  await db.collection('salary_components').createIndex({ payroll_id: 1 });
+
+  // Salary slips indexes
+  await db.collection('salary_slips').createIndex({ payroll_id: 1 }, { unique: true });
+  await db.collection('salary_slips').createIndex({ employee_id: 1 });
+
+  console.log('Database indexes initialized successfully');
+}
+
+/**
+ * Database Collection Schemas (for reference)
+ * MongoDB collections and their structure
  */
 
-export const SQL_SETUP_SCRIPTS = `
--- 1. Create users table (Core authentication)
-CREATE TABLE IF NOT EXISTS users (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL DEFAULT 'EMPLOYEE' CHECK (role IN ('ADMIN', 'EMPLOYEE')),
-  is_verified BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+export const MONGODB_COLLECTIONS = {
+  USERS: 'users',
+  EMAIL_VERIFICATION_TOKENS: 'email_verification_tokens',
+  DEPARTMENTS: 'departments',
+  EMPLOYEES: 'employees',
+  LEAVE_TYPES: 'leave_types',
+  LEAVE_BALANCE: 'leave_balance',
+  LEAVE_APPLICATIONS: 'leave_applications',
+  ATTENDANCE: 'attendance',
+  PAYROLL: 'payroll',
+  SALARY_COMPONENTS: 'salary_components',
+  SALARY_SLIPS: 'salary_slips',
+} as const;
 
--- 2. Create email verification tokens
-CREATE TABLE IF NOT EXISTS email_verification_tokens (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token VARCHAR(255) UNIQUE NOT NULL,
-  expires_at TIMESTAMP NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+/**
+ * Sample Collection Schemas for MongoDB
+ */
 
--- 3. Create departments
-CREATE TABLE IF NOT EXISTS departments (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  manager_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+export const COLLECTION_SCHEMAS = `
+-- 1. Create users collection (Core authentication)
+{
+  "_id": ObjectId,
+  "email": String (unique),
+  "password_hash": String,
+  "role": String (ADMIN, EMPLOYEE),
+  "is_verified": Boolean,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- 4. Create employees table
-CREATE TABLE IF NOT EXISTS employees (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-  first_name VARCHAR(255) NOT NULL,
-  last_name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) NOT NULL,
-  phone VARCHAR(20),
-  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-  position VARCHAR(255),
-  hire_date DATE NOT NULL,
-  salary DECIMAL(12, 2),
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- 2. Create email verification tokens collection
+{
+  "_id": ObjectId,
+  "user_id": ObjectId,
+  "token": String (unique),
+  "expires_at": Date,
+  "created_at": Date
+}
 
--- 5. Create leave types
-CREATE TABLE IF NOT EXISTS leave_types (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name VARCHAR(100) NOT NULL UNIQUE,
-  description TEXT,
-  max_days_per_year INT NOT NULL DEFAULT 0,
-  color VARCHAR(7) DEFAULT '#3B82F6',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- 3. Create departments collection
+{
+  "_id": ObjectId,
+  "name": String,
+  "manager_id": ObjectId,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- 6. Create leave balance
-CREATE TABLE IF NOT EXISTS leave_balance (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  leave_type_id UUID NOT NULL REFERENCES leave_types(id) ON DELETE CASCADE,
-  remaining_days INT NOT NULL DEFAULT 0,
-  used_days INT NOT NULL DEFAULT 0,
-  year INT NOT NULL,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(employee_id, leave_type_id, year)
-);
+-- 4. Create employees collection
+{
+  "_id": ObjectId,
+  "user_id": ObjectId (unique),
+  "first_name": String,
+  "last_name": String,
+  "email": String,
+  "phone": String,
+  "department_id": ObjectId,
+  "position": String,
+  "hire_date": Date,
+  "salary": Number,
+  "is_active": Boolean,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- 7. Create leave applications
-CREATE TABLE IF NOT EXISTS leave_applications (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  leave_type_id UUID NOT NULL REFERENCES leave_types(id) ON DELETE CASCADE,
-  from_date DATE NOT NULL,
-  to_date DATE NOT NULL,
-  reason TEXT,
-  status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
-  approved_by UUID REFERENCES employees(id) ON DELETE SET NULL,
-  rejection_reason TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- 5. Create leave types collection
+{
+  "_id": ObjectId,
+  "name": String (unique),
+  "description": String,
+  "max_days_per_year": Number,
+  "color": String,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- 8. Create attendance table
-CREATE TABLE IF NOT EXISTS attendance (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  attendance_date DATE NOT NULL,
-  check_in_time TIMESTAMP,
-  check_out_time TIMESTAMP,
-  total_hours DECIMAL(5, 2),
-  status VARCHAR(50) DEFAULT 'PRESENT' CHECK (status IN ('PRESENT', 'ABSENT', 'LEAVE', 'HALF_DAY', 'LATE')),
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(employee_id, attendance_date)
-);
+-- 6. Create leave balance collection
+{
+  "_id": ObjectId,
+  "employee_id": ObjectId,
+  "leave_type_id": ObjectId,
+  "remaining_days": Number,
+  "used_days": Number,
+  "year": Number,
+  "updated_at": Date
+}
 
--- 9. Create payroll table
-CREATE TABLE IF NOT EXISTS payroll (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  month INT NOT NULL CHECK (month >= 1 AND month <= 12),
-  year INT NOT NULL,
-  base_salary DECIMAL(12, 2) NOT NULL,
-  allowances DECIMAL(12, 2) DEFAULT 0,
-  deductions DECIMAL(12, 2) DEFAULT 0,
-  net_salary DECIMAL(12, 2) NOT NULL,
-  status VARCHAR(50) DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'APPROVED', 'PAID')),
-  paid_on DATE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(employee_id, month, year)
-);
+-- 7. Create leave applications collection
+{
+  "_id": ObjectId,
+  "employee_id": ObjectId,
+  "leave_type_id": ObjectId,
+  "from_date": Date,
+  "to_date": Date,
+  "reason": String,
+  "status": String (PENDING, APPROVED, REJECTED),
+  "approved_by": ObjectId,
+  "rejection_reason": String,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- 10. Create salary components (allowances and deductions)
-CREATE TABLE IF NOT EXISTS salary_components (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  payroll_id UUID NOT NULL REFERENCES payroll(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  amount DECIMAL(12, 2) NOT NULL,
-  type VARCHAR(50) NOT NULL CHECK (type IN ('ALLOWANCE', 'DEDUCTION')),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- 8. Create attendance collection
+{
+  "_id": ObjectId,
+  "employee_id": ObjectId,
+  "attendance_date": Date,
+  "check_in_time": Date,
+  "check_out_time": Date,
+  "total_hours": Number,
+  "status": String (PRESENT, ABSENT, LEAVE, HALF_DAY, LATE),
+  "notes": String,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- 11. Create salary slips (generated documents)
-CREATE TABLE IF NOT EXISTS salary_slips (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  payroll_id UUID NOT NULL UNIQUE REFERENCES payroll(id) ON DELETE CASCADE,
-  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  pdf_url VARCHAR(500),
-  generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- 9. Create payroll collection
+{
+  "_id": ObjectId,
+  "employee_id": ObjectId,
+  "month": Number (1-12),
+  "year": Number,
+  "base_salary": Number,
+  "allowances": Number,
+  "deductions": Number,
+  "net_salary": Number,
+  "status": String (DRAFT, APPROVED, PAID),
+  "paid_on": Date,
+  "created_at": Date,
+  "updated_at": Date
+}
 
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id);
-CREATE INDEX IF NOT EXISTS idx_employees_department_id ON employees(department_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance(employee_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(attendance_date);
-CREATE INDEX IF NOT EXISTS idx_leave_applications_employee_id ON leave_applications(employee_id);
-CREATE INDEX IF NOT EXISTS idx_leave_applications_status ON leave_applications(status);
-CREATE INDEX IF NOT EXISTS idx_payroll_employee_id ON payroll(employee_id);
-CREATE INDEX IF NOT EXISTS idx_payroll_month_year ON payroll(month, year);
+-- 10. Create salary components collection
+{
+  "_id": ObjectId,
+  "payroll_id": ObjectId,
+  "name": String,
+  "amount": Number,
+  "type": String (ALLOWANCE, DEDUCTION),
+  "created_at": Date
+}
 
--- Insert default leave types
-INSERT INTO leave_types (name, description, max_days_per_year, color) VALUES
-('Paid Leave', 'Annual paid leave', 20, '#3B82F6'),
-('Sick Leave', 'Medical/health-related leave', 10, '#EF4444'),
-('Casual Leave', 'Casual absence from work', 5, '#F59E0B'),
-('Special Leave', 'Special circumstances leave', 3, '#8B5CF6')
-ON CONFLICT DO NOTHING;
+-- 11. Create salary slips collection
+{
+  "_id": ObjectId,
+  "payroll_id": ObjectId (unique),
+  "employee_id": ObjectId,
+  "pdf_url": String,
+  "generated_at": Date,
+  "created_at": Date
+}
 `;
 
 // Export for use in migrations
-export const getDatabaseSetupScript = () => SQL_SETUP_SCRIPTS;
+export const getDatabaseSetupScript = () => COLLECTION_SCHEMAS;

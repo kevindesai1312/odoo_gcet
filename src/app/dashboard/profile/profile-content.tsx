@@ -267,3 +267,4 @@ export function ProfileContent({ employee, isAdmin }: { employee: Employee; isAd
       </motion.div>
     </motion.div>
   )
+}

@@ -3,7 +3,6 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -36,9 +35,9 @@ export default function SignInPage() {
         return
       }
 
-      const token = data.data?.token
+      const token = data.token
       if (token) {
-        document.cookie = `token=${token}; Path=/; Max-Age=${60 * 60 * 24 * 7}; SameSite=Lax` // 7 days
+        document.cookie = `auth-token=${token}; Path=/; Max-Age=${60 * 60 * 24 * 7}; SameSite=Lax` // 7 days
       }
 
       toast.success('Welcome back!')

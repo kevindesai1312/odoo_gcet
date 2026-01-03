@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -47,7 +46,6 @@ const adminLinks = [
 export function DashboardNav({ employee }: { employee: Employee | null }) {
   const pathname = usePathname()
   const router = useRouter()
-  const supabase = createClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -59,8 +57,9 @@ export function DashboardNav({ employee }: { employee: Employee | null }) {
   const links = isAdmin ? adminLinks : employeeLinks
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push("/")
+    // Clear auth token and redirect to signin
+    document.cookie = 'auth-token=; Path=/; Max-Age=0; SameSite=Lax'
+    router.push("/auth/signin")
     router.refresh()
   }
 

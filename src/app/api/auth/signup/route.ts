@@ -1,59 +1,3 @@
-import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { getDb } from '@/lib/mongodb';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-prod';
-
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { email, password, firstName, lastName } = body;
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
-    }
-
-    const db = await getDb();
-    const users = db.collection('users');
-    const employees = db.collection('employees');
-
-    const existing = await users.findOne({ email: email.toLowerCase() });
-    if (existing) {
-      return NextResponse.json({ error: 'User already exists' }, { status: 409 });
-    }
-
-    const password_hash = await bcrypt.hash(password, 10);
-
-    const userDoc = {
-      email: email.toLowerCase(),
-      password_hash,
-      role: 'EMPLOYEE',
-      is_verified: true,
-      created_at: new Date()
-    };
-
-    const res = await users.insertOne(userDoc as any);
-    const userId = res.insertedId;
-
-    const employeeDoc = {
-      user_id: userId,
-      employee_id: `EMP-${Date.now()}`,
-      first_name: firstName || '',
-      last_name: lastName || '',
-      email: email.toLowerCase(),
-      is_active: true,
-      created_at: new Date()
-    };
-    await employees.insertOne(employeeDoc as any);
-
-    const token = jwt.sign({ userId: String(userId), email: email.toLowerCase(), role: 'EMPLOYEE' }, JWT_SECRET, { expiresIn: '7d' });
-
-    return NextResponse.json({ token, user: { id: String(userId), email: email.toLowerCase(), role: 'EMPLOYEE' } }, { status: 201 });
-  } catch (err: any) {
-    console.error('Signup error', err);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
 /**
  * Sign Up API Route
  * POST /api/auth/signup
@@ -61,18 +5,17 @@ export async function POST(req: Request) {
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/database';
-import {
-  hashPassword,
-  isValidEmail,
-  isStrongPassword,
-  generateVerificationToken,
-} from '@/lib/auth';
-import type { SignupPayload, ApiResponse } from '@/lib/types-new';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { getDb } from '@/lib/mongodb';
+import { isValidEmail, isStrongPassword } from '@/lib/auth';
+import type { ApiResponse } from '@/lib/types-new';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-prod';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const body: SignupPayload = await request.json();
+    const body = await request.json();
 
     // Validate input
     const { email, password, firstName, lastName, phone, hireDate } = body;
@@ -113,12 +56,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    const db = await getDb();
+
     // Check if user already exists
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single();
+    const existingUser = await db.collection('users').findOne({ 
+      email: email.toLowerCase() 
+    });
 
     if (existingUser) {
       return NextResponse.json(
@@ -132,85 +75,78 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Hash password
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await bcrypt.hash(password, 10);
 
     // Create user
-    const { data: newUser, error: userError } = await supabase
-      .from('users')
-      .insert({
-        email,
-        password_hash: passwordHash,
-        role: 'EMPLOYEE',
-        is_verified: true,
-      })
-      .select()
-      .single();
+    const userResult = await db.collection('users').insertOne({
+      email: email.toLowerCase(),
+      password_hash: passwordHash,
+      role: 'employee',
+      is_verified: true,
+      created_at: new Date(),
+      updated_at: new Date()
+    });
 
-    if (userError || !newUser) {
+    if (!userResult.insertedId) {
       return NextResponse.json(
         {
           success: false,
           message: 'Failed to create user',
-          error: userError?.message || 'Unknown error',
+          error: 'Database insertion failed',
         } as ApiResponse,
         { status: 500 }
       );
     }
 
     // Create employee record
-    const { data: newEmployee, error: employeeError } = await supabase
-      .from('employees')
-      .insert({
-        user_id: newUser.id,
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        phone: phone || null,
-        hire_date: hireDate,
-        is_active: true,
-      })
-      .select()
-      .single();
+    const employeeResult = await db.collection('employees').insertOne({
+      user_id: userResult.insertedId,
+      first_name: firstName,
+      last_name: lastName,
+      email: email.toLowerCase(),
+      phone: phone || '',
+      position: 'Employee',
+      department: 'General',
+      salary: 0,
+      joining_date: new Date(hireDate),
+      is_active: true,
+      created_at: new Date(),
+      updated_at: new Date()
+    });
 
-    if (employeeError || !newEmployee) {
+    if (!employeeResult.insertedId) {
       // Rollback user creation
-      await supabase.from('users').delete().eq('id', newUser.id);
+      await db.collection('users').deleteOne({ _id: userResult.insertedId });
 
       return NextResponse.json(
         {
           success: false,
           message: 'Failed to create employee record',
-          error: employeeError?.message || 'Unknown error',
+          error: 'Employee creation failed',
         } as ApiResponse,
         { status: 500 }
       );
     }
 
-    // Generate email verification token
-    const { token, expiresAt } = generateVerificationToken();
-
-    const { error: tokenError } = await supabase
-      .from('email_verification_tokens')
-      .insert({
-        user_id: newUser.id,
-        token,
-        expires_at: expiresAt.toISOString(),
-      });
-
-    if (tokenError) {
-      console.error('Failed to create verification token:', tokenError);
-    }
-
-    // TODO: Send verification email with token
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: String(userResult.insertedId), 
+        email: email.toLowerCase(), 
+        role: 'employee' 
+      }, 
+      JWT_SECRET, 
+      { expiresIn: '7d' }
+    );
 
     return NextResponse.json(
       {
         success: true,
-        message:
-          'User registered successfully. Please verify your email to proceed.',
+        message: 'User registered successfully',
         data: {
-          userId: newUser.id,
-          email: newUser.email,
+          userId: String(userResult.insertedId),
+          email: email.toLowerCase(),
+          token
         },
       } as ApiResponse,
       { status: 201 }
